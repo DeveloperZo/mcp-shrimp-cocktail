@@ -1,0 +1,79 @@
+/**
+ * Example demonstrating how to use the new centralized project resolver
+ * This shows how tools should be updated to use the new utility
+ */
+
+import { 
+  resolveProjectWithManager, 
+  ProjectResolutionError,
+  getProjectId,
+  projectExists 
+} from "../utils/projectResolver.js";
+
+/**
+ * Example of how a tool function should use the project resolver
+ * This replaces the manual project resolution logic
+ */
+export async function exampleToolUsingProjectResolver(projectName: string) {
+  try {
+    // NEW: Use centralized project resolver
+    const { project, resolvedBy } = await resolveProjectWithManager(projectName);
+    
+    console.log(`✅ Resolved project "${project.name}" by ${resolvedBy}`);
+    
+    // Use project.id for further operations
+    return {
+      success: true,
+      projectId: project.id,
+      projectName: project.name,
+      message: `Successfully resolved project: ${project.name}`
+    };
+    
+  } catch (error) {
+    if (error instanceof ProjectResolutionError) {
+      // Enhanced error handling with user-friendly messages
+      return {
+        success: false,
+        error: error.getUserMessage(),
+        suggestions: error.suggestionMessage
+      };
+    }
+    
+    throw error; // Re-throw unexpected errors
+  }
+}
+
+/**
+ * Example of checking if a project exists before operations
+ */
+export async function exampleProjectExistenceCheck(projectName: string) {
+  const exists = await projectExists(projectName);
+  
+  if (!exists) {
+    return { success: false, message: `Project "${projectName}" does not exist` };
+  }
+  
+  const projectId = await getProjectId(projectName);
+  return { success: true, projectId };
+}
+
+/**
+ * OLD WAY (now replaced by project resolver):
+ * 
+ * const { projectManager } = await import("../../models/projectModel.js");
+ * await projectManager.initialize();
+ * const projects = await projectManager.listProjects();
+ * const targetProject = projects.find(p => 
+ *   p.id === projectName || p.name === projectName || p.sanitizedName === projectName
+ * );
+ * 
+ * if (!targetProject) {
+ *   throw new Error(`Project "${projectName}" not found`);
+ * }
+ * const projectId = targetProject.id;
+ * 
+ * NEW WAY (using project resolver):
+ * 
+ * const { project } = await resolveProjectWithManager(projectName);
+ * const projectId = project.id;
+ */
