@@ -20,12 +20,14 @@
 ## Project Context
 
 - **Project:** {currentProject}
+- **Current Plan:** {currentPlan}
 - **Project Status:** {projectStatus}
 - **Total Project Tasks:** {projectTaskCount}
+- **Tasks in Current Plan:** {currentPlanTaskCount}
 
 ## Next Steps
 
-The task has been successfully added to the **{currentProject}** project and is ready for execution. You can:
+The task has been successfully added to the **{currentPlan}** plan within the **{currentProject}** project and is ready for execution. You can:
 
 - **Execute the task** using `execute_task` with task ID: `{taskId}`
 - **View task details** using `get_task_detail` with task ID: `{taskId}`

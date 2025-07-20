@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { createTask } from "../../models/taskModel.js";
+import { createProjectTask } from "../../models/taskModel.js";
 import { RelatedFileType } from "../../types/index.js";
-import { getAddTaskPrompt } from "../../prompts/index.js";
+import { loadPromptFromTemplate } from "../../prompts/loader.js";
 import { resolveProject } from "../../utils/projectResolver.js";
 
 // Add single task tool schema
@@ -90,7 +90,7 @@ export async function addTask(args: AddTaskArgs) {
     });
     
     if (!projectResult.success) {
-      const response = getAddTaskPrompt("error", {
+      const response = loadPromptFromTemplate("addTask/error.md", {
         error: projectResult.error || `Failed to resolve project: ${args.projectName}`,
       });
       
@@ -101,42 +101,60 @@ export async function addTask(args: AddTaskArgs) {
     
     const projectId = projectResult.project!.id;
     
-    // Create the task using the model
-    const newTask = await createTask(
-      args.name,
-      args.description,
-      args.notes,
-      args.dependencies || [],
-      args.relatedFiles,
+    // Create the task using createProjectTask for consistency
+    const newTask = await createProjectTask(
+      {
+        name: args.name,
+        description: args.description,
+        notes: args.notes,
+        dependencies: args.dependencies || [],
+        relatedFiles: args.relatedFiles,
+        implementationGuide: args.implementationGuide,
+        verificationCriteria: args.verificationCriteria,
+      },
       projectId
     );
 
-    // Update additional fields if provided
-    if (args.implementationGuide || args.verificationCriteria) {
-      const { updateTask } = await import("../../models/taskModel.js");
-      const updates: any = {};
-      
-      if (args.implementationGuide) {
-        updates.implementationGuide = args.implementationGuide;
-      }
-      
-      if (args.verificationCriteria) {
-        updates.verificationCriteria = args.verificationCriteria;
-      }
-      
-      await updateTask(newTask.id, updates, projectId);
-    }
-
     // Generate response using template
-    const response = getAddTaskPrompt("success", {
+    const dependenciesCount = (args.dependencies || []).length;
+    const relatedFilesCount = (args.relatedFiles || []).length;
+    const hasImplementationGuide = !!args.implementationGuide;
+    const hasVerificationCriteria = !!args.verificationCriteria;
+    
+    // Detect language based on template environment setting
+    const templateSetName = process.env.TEMPLATES_USE || "en";
+    const isChinese = templateSetName === "zh";
+    
+    // Handle conditional logic for implementation guide status
+    const implementationGuideStatus = hasImplementationGuide 
+      ? (isChinese ? "✅ 已提供實現指南" : "✅ Implementation guide provided")
+      : (isChinese ? "ℹ️ 未提供實現指南" : "ℹ️ No implementation guide provided");
+    
+    // Handle conditional logic for verification criteria status
+    const verificationCriteriaStatus = hasVerificationCriteria 
+      ? (isChinese ? "✅ 已提供驗證標準" : "✅ Verification criteria provided")
+      : (isChinese ? "ℹ️ 未提供驗證標準" : "ℹ️ No verification criteria provided");
+    
+    // Handle dependencies note
+    const dependenciesNote = dependenciesCount > 0
+      ? (isChinese 
+          ? `⚠️ **注意：** 此任務有 ${dependenciesCount} 個依賴項。請確保在執行此任務之前完成所有依賴任務。`
+          : `⚠️ **Note:** This task has ${dependenciesCount} dependencies. Make sure all dependent tasks are completed before executing this task.`)
+      : "";
+    
+    const response = loadPromptFromTemplate("addTask/success.md", {
       taskName: newTask.name,
       taskId: newTask.id,
+      currentProject: projectResult.project!.name,
       description: newTask.description,
       notes: newTask.notes || "No additional notes provided",
-      dependenciesCount: (args.dependencies || []).length,
-      relatedFilesCount: (args.relatedFiles || []).length,
-      hasImplementationGuide: !!args.implementationGuide,
-      hasVerificationCriteria: !!args.verificationCriteria,
+      dependenciesCount,
+      relatedFilesCount,
+      implementationGuideStatus,
+      verificationCriteriaStatus,
+      projectStatus: "Active",
+      projectTaskCount: 0, // This would need to be fetched from project stats if available
+      dependenciesNote,
     });
 
     return {
@@ -145,7 +163,7 @@ export async function addTask(args: AddTaskArgs) {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
     
-    const response = getAddTaskPrompt("error", {
+    const response = loadPromptFromTemplate("addTask/error.md", {
       error: errorMsg,
     });
 
