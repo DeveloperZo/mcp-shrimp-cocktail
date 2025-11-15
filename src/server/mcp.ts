@@ -8,7 +8,10 @@ import {
   ListToolsRequestSchema,
   ListPromptsRequestSchema,
   GetPromptRequestSchema,
+  ListResourcesRequestSchema,
+  ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
+import { ZodError } from "zod";
 
 // Import types
 import type {
@@ -21,6 +24,17 @@ import {
   SERVER_VERSION,
 } from "../utils/constants.js";
 
+// Import tool registry and error handling
+import { toolRegistry } from "../tools/registry.js";
+import {
+  createErrorResponse,
+  createValidationErrorResponse,
+  createExecutionErrorResponse,
+  createToolNotFoundResponse,
+  createMissingArgumentsResponse,
+  McpErrorCode,
+} from "./errors.js";
+
 // 導入所有工具函數和 schema
 import {
   planTask,
@@ -29,8 +43,6 @@ import {
   analyzeTaskSchema,
   reflectTask,
   reflectTaskSchema,
-  splitTasks,
-  splitTasksSchema,
   splitTasksRaw,
   splitTasksRawSchema,
   listTasksSchema,
@@ -88,6 +100,11 @@ import {
   generateResearchPlanPrompt,
   generateWorkflowDebugPrompt
 } from "../prompts/generators.js";
+
+// Import models for resources
+import { projectManager } from "../models/projectModel.js";
+import { loadProjectTasks } from "../models/taskModel.js";
+import { planManager } from "../models/planModel.js";
 
 // Define MCP Prompts
 const MCP_PROMPTS: McpPromptsConfig = {
@@ -173,9 +190,131 @@ const MCP_PROMPTS: McpPromptsConfig = {
 };
 
 /**
+ * Register all tools with the registry
+ */
+function registerAllTools(): void {
+  // Task Management Tools
+  toolRegistry.register("plan_task", {
+    schema: planTaskSchema,
+    handler: planTask,
+  });
+  toolRegistry.register("analyze_task", {
+    schema: analyzeTaskSchema,
+    handler: analyzeTask,
+  });
+  toolRegistry.register("reflect_task", {
+    schema: reflectTaskSchema,
+    handler: reflectTask,
+  });
+  toolRegistry.register("split_tasks", {
+    schema: splitTasksRawSchema,
+    handler: splitTasksRaw,
+  });
+  toolRegistry.register("list_tasks", {
+    schema: listTasksSchema,
+    handler: listTasks,
+  });
+  toolRegistry.register("execute_task", {
+    schema: executeTaskSchema,
+    handler: executeTask,
+  });
+  toolRegistry.register("verify_task", {
+    schema: verifyTaskSchema,
+    handler: verifyTask,
+  });
+  toolRegistry.register("delete_task", {
+    schema: deleteTaskSchema,
+    handler: deleteTask,
+  });
+  toolRegistry.register("clear_all_tasks", {
+    schema: clearAllTasksSchema,
+    handler: clearAllTasks,
+  });
+  toolRegistry.register("update_task", {
+    schema: updateTaskContentSchema,
+    handler: updateTaskContent,
+  });
+  toolRegistry.register("query_task", {
+    schema: queryTaskSchema,
+    handler: queryTask,
+  });
+  toolRegistry.register("get_task_detail", {
+    schema: getTaskDetailSchema,
+    handler: getTaskDetail,
+  });
+  toolRegistry.register("add_task", {
+    schema: addTaskSchema,
+    handler: addTask,
+  });
+  
+  // Thought Processing Tools
+  toolRegistry.register("process_thought", {
+    schema: processThoughtSchema,
+    handler: processThought,
+  });
+  toolRegistry.register("research_mode", {
+    schema: researchModeSchema,
+    handler: researchMode,
+  });
+  
+  // Project Management Tools
+  toolRegistry.register("create_project", {
+    schema: createProjectSchema,
+    handler: createProject,
+  });
+  toolRegistry.register("list_projects", {
+    schema: listProjectsSchema,
+    handler: listProjects,
+  });
+  toolRegistry.register("switch_project", {
+    schema: switchProjectSchema,
+    handler: switchProject,
+  });
+  toolRegistry.register("delete_project", {
+    schema: deleteProjectSchema,
+    handler: deleteProject,
+  });
+  toolRegistry.register("get_project_info", {
+    schema: getProjectInfoSchema,
+    handler: getProjectInfo,
+  });
+  
+  // Plan Management Tools
+  toolRegistry.register("create_plan", {
+    schema: createPlanSchema,
+    handler: createPlan,
+  });
+  toolRegistry.register("list_plans", {
+    schema: listPlansSchema,
+    handler: listPlans,
+  });
+  toolRegistry.register("switch_plan", {
+    schema: switchPlanSchema,
+    handler: switchPlan,
+  });
+  toolRegistry.register("delete_plan", {
+    schema: deletePlanSchema,
+    handler: deletePlan,
+  });
+  toolRegistry.register("get_plan_info", {
+    schema: getPlanInfoSchema,
+    handler: getPlanInfo,
+  });
+  
+  // System Tools
+  toolRegistry.register("init_project_rules", {
+    schema: initProjectRulesSchema,
+    handler: initProjectRules,
+  });
+}
+
+/**
  * Create and configure MCP server instance
  */
 export function createMcpServer(): Server {
+  // Register all tools
+  registerAllTools();
+
   // 創建MCP服務器
   const server = new Server(
     {
@@ -186,485 +325,100 @@ export function createMcpServer(): Server {
       capabilities: {
         tools: {},
         prompts: {},
+        resources: {},
       },
     }
   );
 
   // Configure list tools handler
   server.setRequestHandler(ListToolsRequestSchema, async () => {
-    return {
-      tools: [
-        // Task Management Tools
-        {
-          name: "plan_task",
-          description: loadPromptFromTemplate("toolsDescription/planTask.md"),
-          inputSchema: zodToJsonSchema(planTaskSchema),
-        },
-        {
-          name: "analyze_task",
-          description: loadPromptFromTemplate(
-            "toolsDescription/analyzeTask.md"
-          ),
-          inputSchema: zodToJsonSchema(analyzeTaskSchema),
-        },
-        {
-          name: "reflect_task",
-          description: loadPromptFromTemplate(
-            "toolsDescription/reflectTask.md"
-          ),
-          inputSchema: zodToJsonSchema(reflectTaskSchema),
-        },
-        {
-          name: "split_tasks",
-          description: loadPromptFromTemplate(
-            "toolsDescription/splitTasks.md"
-          ),
-          inputSchema: zodToJsonSchema(splitTasksRawSchema),
-        },
-        {
-          name: "list_tasks",
-          description: loadPromptFromTemplate(
-            "toolsDescription/listTasks.md"
-          ),
-          inputSchema: zodToJsonSchema(listTasksSchema),
-        },
-        {
-          name: "execute_task",
-          description: loadPromptFromTemplate(
-            "toolsDescription/executeTask.md"
-          ),
-          inputSchema: zodToJsonSchema(executeTaskSchema),
-        },
-        {
-          name: "verify_task",
-          description: loadPromptFromTemplate(
-            "toolsDescription/verifyTask.md"
-          ),
-          inputSchema: zodToJsonSchema(verifyTaskSchema),
-        },
-        {
-          name: "delete_task",
-          description: loadPromptFromTemplate(
-            "toolsDescription/deleteTask.md"
-          ),
-          inputSchema: zodToJsonSchema(deleteTaskSchema),
-        },
-        {
-          name: "clear_all_tasks",
-          description: loadPromptFromTemplate(
-            "toolsDescription/clearAllTasks.md"
-          ),
-          inputSchema: zodToJsonSchema(clearAllTasksSchema),
-        },
-        {
-          name: "update_task",
-          description: loadPromptFromTemplate(
-            "toolsDescription/updateTask.md"
-          ),
-          inputSchema: zodToJsonSchema(updateTaskContentSchema),
-        },
-        {
-          name: "query_task",
-          description: loadPromptFromTemplate(
-            "toolsDescription/queryTask.md"
-          ),
-          inputSchema: zodToJsonSchema(queryTaskSchema),
-        },
-        {
-          name: "get_task_detail",
-          description: loadPromptFromTemplate(
-            "toolsDescription/getTaskDetail.md"
-          ),
-          inputSchema: zodToJsonSchema(getTaskDetailSchema),
-        },
-        {
-          name: "add_task",
-          description: loadPromptFromTemplate(
-            "toolsDescription/addTask.md"
-          ),
-          inputSchema: zodToJsonSchema(addTaskSchema),
-        },
-        // Thought Processing Tools
-        {
-          name: "process_thought",
-          description: loadPromptFromTemplate(
-            "toolsDescription/processThought.md"
-          ),
-          inputSchema: zodToJsonSchema(processThoughtSchema),
-        },
-        {
-          name: "research_mode",
-          description: loadPromptFromTemplate(
-            "toolsDescription/researchMode.md"
-          ),
-          inputSchema: zodToJsonSchema(researchModeSchema),
-        },
-        // Project Management Tools
-        {
-          name: "create_project",
-          description: loadPromptFromTemplate(
-            "toolsDescription/createProject.md"
-          ),
-          inputSchema: zodToJsonSchema(createProjectSchema),
-        },
-        {
-          name: "list_projects",
-          description: loadPromptFromTemplate(
-            "toolsDescription/listProjects.md"
-          ),
-          inputSchema: zodToJsonSchema(listProjectsSchema),
-        },
-        {
-          name: "switch_project",
-          description: loadPromptFromTemplate(
-            "toolsDescription/switchProject.md"
-          ),
-          inputSchema: zodToJsonSchema(switchProjectSchema),
-        },
-        {
-          name: "delete_project",
-          description: loadPromptFromTemplate(
-            "toolsDescription/deleteProject.md"
-          ),
-          inputSchema: zodToJsonSchema(deleteProjectSchema),
-        },
-        {
-          name: "get_project_info",
-          description: loadPromptFromTemplate(
-            "toolsDescription/getProjectInfo.md"
-          ),
-          inputSchema: zodToJsonSchema(getProjectInfoSchema),
-        },
-        // Plan Management Tools
-        {
-          name: "create_plan",
-          description: loadPromptFromTemplate(
-            "toolsDescription/createPlan.md"
-          ),
-          inputSchema: zodToJsonSchema(createPlanSchema),
-        },
-        {
-          name: "list_plans",
-          description: loadPromptFromTemplate(
-            "toolsDescription/listPlans.md"
-          ),
-          inputSchema: zodToJsonSchema(listPlansSchema),
-        },
-        {
-          name: "switch_plan",
-          description: loadPromptFromTemplate(
-            "toolsDescription/switchPlan.md"
-          ),
-          inputSchema: zodToJsonSchema(switchPlanSchema),
-        },
-        {
-          name: "delete_plan",
-          description: loadPromptFromTemplate(
-            "toolsDescription/deletePlan.md"
-          ),
-          inputSchema: zodToJsonSchema(deletePlanSchema),
-        },
-        {
-          name: "get_plan_info",
-          description: loadPromptFromTemplate(
-            "toolsDescription/getPlanInfo.md"
-          ),
-          inputSchema: zodToJsonSchema(getPlanInfoSchema),
-        },
-        // System Tools
-        {
-          name: "init_project_rules",
-          description: loadPromptFromTemplate(
-            "toolsDescription/initProjectRules.md"
-          ),
-          inputSchema: zodToJsonSchema(initProjectRulesSchema),
-        },
-      ],
+    const tools = [];
+    const toolMap = toolRegistry.getAll();
+    
+    // Map tool names to template names (convert snake_case to camelCase)
+    const toolNameToTemplate = (toolName: string): string => {
+      const parts = toolName.split('_');
+      return parts[0] + parts.slice(1).map(p => p.charAt(0).toUpperCase() + p.slice(1)).join('');
     };
+    
+    for (const [name, tool] of toolMap.entries()) {
+      try {
+        // Get description from template
+        const templateName = toolNameToTemplate(name);
+        const descriptionPath = `toolsDescription/${templateName}.md`;
+        const description = loadPromptFromTemplate(descriptionPath);
+        
+        tools.push({
+          name,
+          description,
+          inputSchema: zodToJsonSchema(tool.schema),
+        });
+      } catch (error) {
+        // Fallback description if template loading fails
+        tools.push({
+          name,
+          description: tool.description || `Tool: ${name}`,
+          inputSchema: zodToJsonSchema(tool.schema),
+        });
+      }
+    }
+    
+    return { tools };
   });
 
-  // Configure call tool handler
+  // Configure call tool handler using registry
   server.setRequestHandler(
     CallToolRequestSchema,
     async (request: CallToolRequest) => {
-      try {
-        if (!request.params.arguments) {
-          throw new Error("No arguments provided");
-        }
+      const toolName = request.params.name;
+      const availableTools = toolRegistry.list();
+      
+      // Check if tool exists
+      const tool = toolRegistry.get(toolName);
+      if (!tool) {
+        return createToolNotFoundResponse(toolName, availableTools);
+      }
 
-        let parsedArgs;
-        switch (request.params.name) {
-          // Task Management Tools
-          case "plan_task":
-            parsedArgs = await planTaskSchema.safeParseAsync(
-              request.params.arguments
-            );
-            if (!parsedArgs.success) {
-              throw new Error(
-                `Invalid arguments for tool ${request.params.name}: ${parsedArgs.error.message}`
-              );
-            }
-            return await planTask(parsedArgs.data);
-          case "analyze_task":
-            parsedArgs = await analyzeTaskSchema.safeParseAsync(
-              request.params.arguments
-            );
-            if (!parsedArgs.success) {
-              throw new Error(
-                `Invalid arguments for tool ${request.params.name}: ${parsedArgs.error.message}`
-              );
-            }
-            return await analyzeTask(parsedArgs.data);
-          case "reflect_task":
-            parsedArgs = await reflectTaskSchema.safeParseAsync(
-              request.params.arguments
-            );
-            if (!parsedArgs.success) {
-              throw new Error(
-                `Invalid arguments for tool ${request.params.name}: ${parsedArgs.error.message}`
-              );
-            }
-            return await reflectTask(parsedArgs.data);
-          case "split_tasks":
-            parsedArgs = await splitTasksRawSchema.safeParseAsync(
-              request.params.arguments
-            );
-            if (!parsedArgs.success) {
-              throw new Error(
-                `Invalid arguments for tool ${request.params.name}: ${parsedArgs.error.message}`
-              );
-            }
-            return await splitTasksRaw(parsedArgs.data);
-          case "list_tasks":
-            parsedArgs = await listTasksSchema.safeParseAsync(
-              request.params.arguments
-            );
-            if (!parsedArgs.success) {
-              throw new Error(
-                `Invalid arguments for tool ${request.params.name}: ${parsedArgs.error.message}`
-              );
-            }
-            return await listTasks(parsedArgs.data);
-          case "execute_task":
-            parsedArgs = await executeTaskSchema.safeParseAsync(
-              request.params.arguments
-            );
-            if (!parsedArgs.success) {
-              throw new Error(
-                `Invalid arguments for tool ${request.params.name}: ${parsedArgs.error.message}`
-              );
-            }
-            return await executeTask(parsedArgs.data);
-          case "verify_task":
-            parsedArgs = await verifyTaskSchema.safeParseAsync(
-              request.params.arguments
-            );
-            if (!parsedArgs.success) {
-              throw new Error(
-                `Invalid arguments for tool ${request.params.name}: ${parsedArgs.error.message}`
-              );
-            }
-            return await verifyTask(parsedArgs.data);
-          case "delete_task":
-            parsedArgs = await deleteTaskSchema.safeParseAsync(
-              request.params.arguments
-            );
-            if (!parsedArgs.success) {
-              throw new Error(
-                `Invalid arguments for tool ${request.params.name}: ${parsedArgs.error.message}`
-              );
-            }
-            return await deleteTask(parsedArgs.data);
-          case "clear_all_tasks":
-            parsedArgs = await clearAllTasksSchema.safeParseAsync(
-              request.params.arguments
-            );
-            if (!parsedArgs.success) {
-              throw new Error(
-                `Invalid arguments for tool ${request.params.name}: ${parsedArgs.error.message}`
-              );
-            }
-            return await clearAllTasks(parsedArgs.data);
-          case "update_task":
-            parsedArgs = await updateTaskContentSchema.safeParseAsync(
-              request.params.arguments
-            );
-            if (!parsedArgs.success) {
-              throw new Error(
-                `Invalid arguments for tool ${request.params.name}: ${parsedArgs.error.message}`
-              );
-            }
-            return await updateTaskContent(parsedArgs.data);
-          case "query_task":
-            parsedArgs = await queryTaskSchema.safeParseAsync(
-              request.params.arguments
-            );
-            if (!parsedArgs.success) {
-              throw new Error(
-                `Invalid arguments for tool ${request.params.name}: ${parsedArgs.error.message}`
-              );
-            }
-            return await queryTask(parsedArgs.data);
-          case "get_task_detail":
-            parsedArgs = await getTaskDetailSchema.safeParseAsync(
-              request.params.arguments
-            );
-            if (!parsedArgs.success) {
-              throw new Error(
-                `Invalid arguments for tool ${request.params.name}: ${parsedArgs.error.message}`
-              );
-            }
-            return await getTaskDetail(parsedArgs.data);
-          case "add_task":
-            parsedArgs = await addTaskSchema.safeParseAsync(
-              request.params.arguments
-            );
-            if (!parsedArgs.success) {
-              throw new Error(
-                `Invalid arguments for tool ${request.params.name}: ${parsedArgs.error.message}`
-              );
-            }
-            return await addTask(parsedArgs.data);
-          // Thought Processing Tools
-          case "process_thought":
-            parsedArgs = await processThoughtSchema.safeParseAsync(
-              request.params.arguments
-            );
-            if (!parsedArgs.success) {
-              throw new Error(
-                `Invalid arguments for tool ${request.params.name}: ${parsedArgs.error.message}`
-              );
-            }
-            return await processThought(parsedArgs.data);
-          case "research_mode":
-            parsedArgs = await researchModeSchema.safeParseAsync(
-              request.params.arguments
-            );
-            if (!parsedArgs.success) {
-              throw new Error(
-                `Invalid arguments for tool ${request.params.name}: ${parsedArgs.error.message}`
-              );
-            }
-            return await researchMode(parsedArgs.data);
-          // Project Management Tools
-          case "create_project":
-            parsedArgs = await createProjectSchema.safeParseAsync(
-              request.params.arguments
-            );
-            if (!parsedArgs.success) {
-              throw new Error(
-                `Invalid arguments for tool ${request.params.name}: ${parsedArgs.error.message}`
-              );
-            }
-            return await createProject(parsedArgs.data);
-          case "list_projects":
-            parsedArgs = await listProjectsSchema.safeParseAsync(
-              request.params.arguments
-            );
-            if (!parsedArgs.success) {
-              throw new Error(
-                `Invalid arguments for tool ${request.params.name}: ${parsedArgs.error.message}`
-              );
-            }
-            return await listProjects(parsedArgs.data);
-          case "switch_project":
-            parsedArgs = await switchProjectSchema.safeParseAsync(
-              request.params.arguments
-            );
-            if (!parsedArgs.success) {
-              throw new Error(
-                `Invalid arguments for tool ${request.params.name}: ${parsedArgs.error.message}`
-              );
-            }
-            return await switchProject(parsedArgs.data);
-          case "delete_project":
-            parsedArgs = await deleteProjectSchema.safeParseAsync(
-              request.params.arguments
-            );
-            if (!parsedArgs.success) {
-              throw new Error(
-                `Invalid arguments for tool ${request.params.name}: ${parsedArgs.error.message}`
-              );
-            }
-            return await deleteProject(parsedArgs.data);
-          case "get_project_info":
-            parsedArgs = await getProjectInfoSchema.safeParseAsync(
-              request.params.arguments
-            );
-            if (!parsedArgs.success) {
-              throw new Error(
-                `Invalid arguments for tool ${request.params.name}: ${parsedArgs.error.message}`
-              );
-            }
-            return await getProjectInfo(parsedArgs.data);
-          // Plan Management Tools
-          case "create_plan":
-            parsedArgs = await createPlanSchema.safeParseAsync(
-              request.params.arguments
-            );
-            if (!parsedArgs.success) {
-              throw new Error(
-                `Invalid arguments for tool ${request.params.name}: ${parsedArgs.error.message}`
-              );
-            }
-            return await createPlan(parsedArgs.data);
-          case "list_plans":
-            parsedArgs = await listPlansSchema.safeParseAsync(
-              request.params.arguments
-            );
-            if (!parsedArgs.success) {
-              throw new Error(
-                `Invalid arguments for tool ${request.params.name}: ${parsedArgs.error.message}`
-              );
-            }
-            return await listPlans(parsedArgs.data);
-          case "switch_plan":
-            parsedArgs = await switchPlanSchema.safeParseAsync(
-              request.params.arguments
-            );
-            if (!parsedArgs.success) {
-              throw new Error(
-                `Invalid arguments for tool ${request.params.name}: ${parsedArgs.error.message}`
-              );
-            }
-            return await switchPlan(parsedArgs.data);
-          case "delete_plan":
-            parsedArgs = await deletePlanSchema.safeParseAsync(
-              request.params.arguments
-            );
-            if (!parsedArgs.success) {
-              throw new Error(
-                `Invalid arguments for tool ${request.params.name}: ${parsedArgs.error.message}`
-              );
-            }
-            return await deletePlan(parsedArgs.data);
-          case "get_plan_info":
-            parsedArgs = await getPlanInfoSchema.safeParseAsync(
-              request.params.arguments
-            );
-            if (!parsedArgs.success) {
-              throw new Error(
-                `Invalid arguments for tool ${request.params.name}: ${parsedArgs.error.message}`
-              );
-            }
-            return await getPlanInfo(parsedArgs.data);
-          // System Tools
-          case "init_project_rules":
-            return await initProjectRules();
-          default:
-            throw new Error(`Tool ${request.params.name} does not exist`);
+      // Check for arguments (some tools may not require arguments)
+      if (!request.params.arguments) {
+        // Check if schema requires any fields
+        const schemaShape = (tool.schema as any)._def?.shape || {};
+        const hasRequiredFields = Object.values(schemaShape).some(
+          (field: any) => field._def?.typeName === "ZodOptional" === false
+        );
+        
+        // If schema is empty object or all optional, allow no arguments
+        if (Object.keys(schemaShape).length === 0) {
+          // Empty schema - call handler with empty object
+          try {
+            return await tool.handler({});
+          } catch (error) {
+            return createExecutionErrorResponse(toolName, error, availableTools);
+          }
         }
+        
+        // If there are required fields, return error
+        return createMissingArgumentsResponse(toolName);
+      }
+
+      // Parse and validate arguments
+      const parsedArgs = await tool.schema.safeParseAsync(
+        request.params.arguments
+      );
+
+      if (!parsedArgs.success) {
+        return createValidationErrorResponse(
+          toolName,
+          parsedArgs.error,
+          availableTools
+        );
+      }
+
+      // Execute tool
+      try {
+        return await tool.handler(parsedArgs.data);
       } catch (error) {
-        const errorMsg =
-          error instanceof Error ? error.message : String(error);
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error occurred: ${errorMsg} \n Please try correcting the error and calling the tool again`,
-            },
-          ],
-        };
+        return createExecutionErrorResponse(toolName, error, availableTools);
       }
     }
   );
@@ -678,62 +432,234 @@ export function createMcpServer(): Server {
 
   server.setRequestHandler(GetPromptRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
+    const availablePrompts = Object.keys(MCP_PROMPTS);
     
-    switch (name) {
-      case "create-development-task":
+    const prompt = MCP_PROMPTS[name];
+    if (!prompt) {
+      return {
+        messages: [{
+          role: "user",
+          content: {
+            type: "text",
+            text: createErrorResponse({
+              code: McpErrorCode.PROMPT_NOT_FOUND,
+              message: `Prompt '${name}' not found`,
+              promptName: name,
+              availablePrompts,
+            }).content[0].text
+          }
+        }]
+      };
+    }
+    
+    // Validate required arguments
+    if (prompt.arguments) {
+      const missingArgs: string[] = [];
+      for (const arg of prompt.arguments) {
+        if (arg.required && (!args || !args[arg.name])) {
+          missingArgs.push(arg.name);
+        }
+      }
+      
+      if (missingArgs.length > 0) {
         return {
-          messages: [
-            {
-              role: "user",
-              content: {
-                type: "text",
-                text: generateTaskCreationPrompt(args)
-              }
+          messages: [{
+            role: "user",
+            content: {
+              type: "text",
+              text: createErrorResponse({
+                code: McpErrorCode.MISSING_PROMPT_ARGUMENTS,
+                message: `Missing required arguments for prompt '${name}': ${missingArgs.join(", ")}`,
+                promptName: name,
+                details: { missingArguments: missingArgs },
+              }).content[0].text
             }
-          ]
+          }]
         };
+      }
+    }
+    
+    // Generate prompt based on name
+    let promptText: string;
+    try {
+      switch (name) {
+        case "create-development-task":
+          promptText = generateTaskCreationPrompt(args);
+          break;
+        case "analyze-codebase":
+          promptText = generateCodebaseAnalysisPrompt(args);
+          break;
+        case "create-research-plan":
+          promptText = generateResearchPlanPrompt(args);
+          break;
+        case "debug-task-workflow":
+          promptText = generateWorkflowDebugPrompt(args);
+          break;
+        default:
+          throw new Error(`Prompt generator not found for '${name}'`);
+      }
+    } catch (error) {
+      return {
+        messages: [{
+          role: "user",
+          content: {
+            type: "text",
+            text: createErrorResponse({
+              code: McpErrorCode.INTERNAL_ERROR,
+              message: `Failed to generate prompt: ${error instanceof Error ? error.message : String(error)}`,
+              promptName: name,
+            }).content[0].text
+          }
+        }]
+      };
+    }
+    
+    return {
+      messages: [{
+        role: "user",
+        content: {
+          type: "text",
+          text: promptText
+        }
+      }]
+    };
+  });
+
+  // Add Resources Support
+  server.setRequestHandler(ListResourcesRequestSchema, async () => {
+    try {
+      await projectManager.initialize();
+      const projects = await projectManager.listProjects();
+      
+      const resources = [
+        {
+          uri: "shrimp://projects",
+          name: "Projects List",
+          description: "List of all projects in the system",
+          mimeType: "application/json"
+        }
+      ];
+      
+      // Add project-specific resources
+      for (const project of projects) {
+        resources.push({
+          uri: `shrimp://projects/${project.id}/tasks`,
+          name: `Tasks for ${project.name}`,
+          description: `Tasks in project '${project.name}'`,
+          mimeType: "application/json"
+        });
         
-      case "analyze-codebase":
+        // Add plan resources for each project
+        await planManager.initialize(project.id);
+        const plans = await planManager.listPlans(project.id);
+        for (const plan of plans) {
+          resources.push({
+            uri: `shrimp://projects/${project.id}/plans/${plan.id}/tasks`,
+            name: `Tasks for ${project.name} - ${plan.name}`,
+            description: `Tasks in project '${project.name}', plan '${plan.name}'`,
+            mimeType: "application/json"
+          });
+        }
+      }
+      
+      return { resources };
+    } catch (error) {
+      // Return minimal resources list on error
+      return {
+        resources: [{
+          uri: "shrimp://projects",
+          name: "Projects List",
+          description: "List of all projects in the system",
+          mimeType: "application/json"
+        }]
+      };
+    }
+  });
+
+  server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+    const { uri } = request.params;
+    
+    try {
+      // Parse URI: shrimp://projects/{projectId}/plans/{planId}/tasks
+      const uriMatch = uri.match(/^shrimp:\/\/(projects(?:\/([^\/]+))?(?:\/plans\/([^\/]+))?(?:\/tasks)?)?$/);
+      
+      if (!uriMatch) {
         return {
-          messages: [
-            {
-              role: "user", 
-              content: {
-                type: "text",
-                text: generateCodebaseAnalysisPrompt(args)
-              }
-            }
-          ]
+          contents: [{
+            uri,
+            mimeType: "text/plain",
+            text: createErrorResponse({
+              code: McpErrorCode.RESOURCE_NOT_FOUND,
+              message: `Invalid resource URI: ${uri}`,
+              resourceUri: uri,
+            }).content[0].text
+          }]
         };
+      }
+      
+      const [, , projectId, planId] = uriMatch;
+      
+      if (uri === "shrimp://projects") {
+        // List all projects
+        await projectManager.initialize();
+        const projects = await projectManager.listProjects();
         
-      case "create-research-plan":
         return {
-          messages: [
-            {
-              role: "user",
-              content: {
-                type: "text", 
-                text: generateResearchPlanPrompt(args)
-              }
-            }
-          ]
+          contents: [{
+            uri,
+            mimeType: "application/json",
+            text: JSON.stringify(projects, null, 2)
+          }]
         };
-        
-      case "debug-task-workflow":
+      }
+      
+      if (projectId && !planId) {
+        // Project tasks (default plan)
+        const tasks = await loadProjectTasks(projectId, "default");
         return {
-          messages: [
-            {
-              role: "user",
-              content: {
-                type: "text",
-                text: generateWorkflowDebugPrompt(args)
-              }
-            }
-          ]
+          contents: [{
+            uri,
+            mimeType: "application/json",
+            text: JSON.stringify(tasks, null, 2)
+          }]
         };
-        
-      default:
-        throw new Error(`Prompt ${name} not found`);
+      }
+      
+      if (projectId && planId) {
+        // Specific plan tasks
+        const tasks = await loadProjectTasks(projectId, planId);
+        return {
+          contents: [{
+            uri,
+            mimeType: "application/json",
+            text: JSON.stringify(tasks, null, 2)
+          }]
+        };
+      }
+      
+      return {
+        contents: [{
+          uri,
+          mimeType: "text/plain",
+          text: createErrorResponse({
+            code: McpErrorCode.RESOURCE_NOT_FOUND,
+            message: `Resource not found: ${uri}`,
+            resourceUri: uri,
+          }).content[0].text
+        }]
+      };
+    } catch (error) {
+      return {
+        contents: [{
+          uri,
+          mimeType: "text/plain",
+          text: createErrorResponse({
+            code: McpErrorCode.INTERNAL_ERROR,
+            message: `Failed to read resource: ${error instanceof Error ? error.message : String(error)}`,
+            resourceUri: uri,
+          }).content[0].text
+        }]
+      };
     }
   });
 
@@ -744,9 +670,27 @@ export function createMcpServer(): Server {
  * Start MCP server with transport
  */
 export async function startMcpServer(): Promise<void> {
-  const server = createMcpServer();
-  
-  // 建立連接
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
+  try {
+    const server = createMcpServer();
+    
+    // 建立連接
+    const transport = new StdioServerTransport();
+    await server.connect(transport);
+    
+    // Set up graceful shutdown
+    const shutdown = async () => {
+      try {
+        await server.close();
+        process.exit(0);
+      } catch (error) {
+        process.exit(1);
+      }
+    };
+    
+    process.on("SIGINT", shutdown);
+    process.on("SIGTERM", shutdown);
+  } catch (error) {
+    // Silent exit for MCP compatibility
+    process.exit(1);
+  }
 }

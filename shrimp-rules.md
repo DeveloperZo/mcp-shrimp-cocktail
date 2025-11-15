@@ -10,6 +10,67 @@
 
 ---
 
+## AI Agent Governance Standards
+
+### Permission Requirements
+
+**ASK PERMISSION BEFORE**:
+
+1. **Modifying package.json** - Dependencies affect the entire project ecosystem
+2. **Creating new scripts** (.sh, .bat, deployment scripts) - Can affect system operations
+3. **Adding new .md documentation files** - Keep docs organized and avoid duplication
+4. **Modifying core data structures** (Task, Project interfaces) - Requires migration plan
+5. **Changes to MCP protocol implementation** - Affects system compatibility
+6. **Database schema modifications** - Impacts data persistence
+7. **Breaking changes to existing APIs** - Affects all consumers
+
+### Autonomous Actions
+
+**JUST DO IT** (No permission needed):
+
+- Writing/modifying TypeScript code within established patterns
+- Creating new tools following existing patterns
+- Updating existing documentation
+- Writing tests and improving test coverage
+- Creating API endpoints following standards
+- Fixing bugs and improving error handling
+- Refactoring code for better maintainability
+- Adding templates in all language directories
+- Implementing domain-specific business logic
+
+### Pragmatic Decision Framework
+
+**Decision Guidelines**:
+- **If it's reversible** → Just do it
+- **If it affects other systems/teams** → Ask first
+- **If you're unsure about impact** → Ask first
+- **If it's core architecture** → Always ask
+- **If it's a POC/prototype** → Move fast but communicate
+
+### Communication Examples
+
+```
+❌ BAD: "I'll add moment.js to package.json for date handling"
+✅ GOOD: "Should I add moment.js for date handling, or use the existing date-fns?"
+
+❌ BAD: "I'll create a new DEPLOYMENT.md file"
+✅ GOOD: "Should I add deployment info to README.md or create a new file?"
+
+❌ BAD: "I'll change the Task interface to add new fields"
+✅ GOOD: "The Task interface needs new fields for X. Here's my migration plan..."
+```
+
+### AI Agent Behavioral Standards
+
+- **Be explicit about changes**: Always describe what you're modifying and why
+- **Maintain consistency**: Follow existing patterns and conventions
+- **Document decisions**: Include reasoning in code comments for non-obvious choices
+- **Test assumptions**: Validate your understanding before making changes
+- **Preserve functionality**: Never break existing features without explicit approval
+- **Communicate uncertainty**: If unsure, ask for clarification rather than guess
+
+---
+
 ## TypeScript Development Standards
 
 ### Module and Import Requirements
@@ -124,6 +185,60 @@ export async function toolName(args: ToolNameArgs) {
 3. Register tool in main `src/index.ts` in both:
    - ListToolsRequestSchema handler
    - CallToolRequestSchema handler
+
+---
+
+## Domain-Specific Implementation Patterns
+
+### Business Rule Management Systems
+
+When implementing rule-based systems (e.g., eligibility, underwriting, decision management):
+
+**Architecture Components**:
+- **UI Layer**: Self-service interface for business users (e.g., Retool)
+- **Middleware Service**: TypeScript backend for rule conversion and orchestration
+- **Rule Engine**: Standard execution engine (e.g., Camunda DMN)
+- **Data Layer**: External data sources and persistence
+
+**Implementation Standards**:
+
+```typescript
+// Rule Definition Interface Pattern
+interface IRuleConfig {
+  ruleId: string;
+  ruleName: string;
+  ruleType: 'simple' | 'complex' | 'composite';
+  conditions: ICondition[];
+  actions: IAction[];
+  metadata?: IRuleMetadata;
+}
+
+// DMN Generation Pattern
+export async function generateDmnXml(rule: IRuleConfig): Promise<string> {
+  // Validate rule configuration
+  validateRuleConfig(rule);
+  
+  // Build DMN structure
+  const dmnTemplate = getTemplateByRuleType(rule.ruleType);
+  
+  // Generate XML with proper escaping
+  const xml = buildXmlFromTemplate(dmnTemplate, rule);
+  
+  // Validate generated XML
+  const validation = validateDmnXml(xml);
+  if (!validation.valid) {
+    throw new Error(`Invalid DMN: ${validation.errors.join(', ')}`);
+  }
+  
+  return xml;
+}
+```
+
+**Critical Requirements**:
+- **Performance**: Rule evaluation must complete within 500ms
+- **Validation**: All DMN XML must be validated before deployment
+- **Error Handling**: Graceful handling of external data failures
+- **Audit**: Comprehensive logging for compliance
 
 ---
 
@@ -277,6 +392,36 @@ function sendSseUpdate(options: {
 
 ---
 
+## Integration Testing Requirements
+
+### Mandatory Testing Before Deployment
+
+**CRITICAL**: No deployment should occur without successful completion of integration tests
+
+```bash
+# Required test command
+npm run test-local
+
+# This validates:
+# ✅ Environment and dependencies
+# ✅ Docker services (if applicable)
+# ✅ Service connectivity
+# ✅ API endpoint functionality
+# ✅ Data flow and transformations
+# ✅ Error handling scenarios
+```
+
+**Success Criteria**: System must show "READY FOR DEPLOYMENT" status
+
+### Test Coverage Requirements
+
+- **Unit Tests**: Individual function validation (80% coverage minimum)
+- **Integration Tests**: End-to-end workflow validation
+- **Performance Tests**: Response time < 2 seconds for standard operations
+- **Error Scenarios**: Graceful handling of all failure modes
+
+---
+
 ## File Organization and Coordination Rules
 
 ### Multi-File Coordination Requirements
@@ -386,6 +531,10 @@ TEMPLATES_USE=en
 # OPTIONAL
 ENABLE_GUI=false
 WEB_PORT=3000
+
+# For rule-based systems
+CAMUNDA_URL=http://localhost:8080
+EXTERNAL_DATA_API=http://localhost:3001
 ```
 
 ### Dependency Management
@@ -408,6 +557,9 @@ WEB_PORT=3000
 **FORBIDDEN**: Changes to MCP protocol implementation
 **FORBIDDEN**: Removing backwards compatibility features
 **FORBIDDEN**: Direct database operations (use model layer abstractions)
+**FORBIDDEN**: Adding new dependencies to package.json without discussion
+**FORBIDDEN**: Creating deployment or system scripts without review
+**FORBIDDEN**: Adding redundant documentation files
 
 ### Architecture Decision Rules
 
@@ -529,7 +681,7 @@ export async function exampleTool(args: ExampleToolArgs) {
 
 ---
 
-**Document Version**: 1.0  
-**Created**: July 8, 2025  
+**Document Version**: 1.1  
+**Last Updated**: August 8, 2025  
 **Target Audience**: AI Development Agents  
-**Project Phase**: Enhancement and Multi-Project Support  
+**Project Phase**: Enhancement and Multi-Project Support with Domain-Specific Patterns
