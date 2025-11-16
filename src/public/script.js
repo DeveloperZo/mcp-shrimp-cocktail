@@ -1835,16 +1835,6 @@ async function deletePlan() {
   const selectedPlanOption = planSelector.options[planSelector.selectedIndex];
   const planName = selectedPlanOption ? selectedPlanOption.textContent.replace(/^★\s*/, '') : 'Unknown Plan'; // Remove star indicator
 
-  // 防止刪除默認計劃
-  if (currentPlan === 'default') {
-    const notification = document.createElement('div');
-    notification.className = 'copy-notification';
-    notification.style.backgroundColor = 'var(--danger-color)';
-    notification.textContent = translate('delete_plan_default_protection') || 'Cannot delete the default plan';
-    document.body.appendChild(notification);
-    setTimeout(() => notification.remove(), 3000);
-    return;
-  }
 
   // 顯示確認對話
   const confirmMessage = translate('delete_plan_confirm', { planName }) || 

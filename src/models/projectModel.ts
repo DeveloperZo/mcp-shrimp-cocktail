@@ -19,8 +19,6 @@ import {
 } from "../types/index.js";
 import { sanitizeProjectName, validateProjectName, getDataDir } from "../utils/index.js";
 import { 
-  DEFAULT_PROJECT_ID, 
-  DEFAULT_PROJECT_NAME,
   PROJECTS_FILE_NAME,
   CONTEXT_FILE_NAMES,
   DATA_DIR_NAME
@@ -85,11 +83,10 @@ export class ProjectManager {
 
   /**
    * Initialize the project management system
-   * Sets up directory structure and ensures default project exists
+   * Sets up directory structure
    */
   public async initialize(): Promise<void> {
     await this.ensureDataDir();
-    await this.ensureDefaultProject();
     await this.loadProjectsCache();
     await this.initializeContext();
   }
@@ -122,67 +119,6 @@ export class ProjectManager {
     }
   }
 
-  /**
-   * Ensure default project exists for backwards compatibility
-   */
-  private async ensureDefaultProject(): Promise<void> {
-    const defaultProjectPath = this.getProjectPath(DEFAULT_PROJECT_ID);
-    
-    try {
-      await fs.access(defaultProjectPath);
-    } catch (error) {
-      // Create default project directory
-      await fs.mkdir(defaultProjectPath, { recursive: true });
-      
-      // Check if we need to migrate existing tasks.json
-      const dataDir = this.getDataDir();
-      const legacyTasksFile = path.join(dataDir, "tasks.json");
-      const defaultTasksFile = path.join(defaultProjectPath, "tasks.json");
-      
-      try {
-        await fs.access(legacyTasksFile);
-        // Migrate existing tasks.json to default project
-        await fs.copyFile(legacyTasksFile, defaultTasksFile);
-        // Create backup and remove original
-        const timestamp = new Date().toISOString().replace(/:/g, "-").replace(/\..+/, "");
-        const backupFile = path.join(dataDir, "memory", `tasks_migration_${timestamp}.json`);
-        await fs.copyFile(legacyTasksFile, backupFile);
-        await fs.unlink(legacyTasksFile);
-      } catch (migrationError) {
-        // No existing tasks.json to migrate, create empty one
-        await fs.writeFile(defaultTasksFile, JSON.stringify({ tasks: [] }, null, 2));
-      }
-    }
-
-    // Ensure default project metadata exists
-    const projects = await this.readProjects();
-    const defaultProject = projects.find(p => p.id === DEFAULT_PROJECT_ID);
-    
-    if (!defaultProject) {
-      const defaultProjectMetadata: ProjectMetadata = {
-        id: DEFAULT_PROJECT_ID,
-        name: DEFAULT_PROJECT_NAME,
-        sanitizedName: DEFAULT_PROJECT_ID,
-        description: "Default project for backwards compatibility",
-        status: ProjectStatus.ACTIVE,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        config: {
-          templateLanguage: process.env.TEMPLATES_USE || "en",
-          autoBackup: true,
-        },
-        stats: {
-          totalTasks: 0,
-          completedTasks: 0,
-          activeTasks: 0,
-          lastActivity: new Date(),
-        },
-      };
-      
-      projects.push(defaultProjectMetadata);
-      await this.writeProjects(projects);
-    }
-  }
 
   /**
    * Load projects into cache for performance
@@ -209,9 +145,9 @@ export class ProjectManager {
       if (this.currentContext && this.currentContext.currentProjectId) {
         const projectExists = await this.projectExists(this.currentContext.currentProjectId);
         if (!projectExists) {
-          // Reset to default project if current project doesn't exist
-          this.currentContext.currentProjectId = DEFAULT_PROJECT_ID;
-          this.currentContext.currentProject = this.projectsCache.get(DEFAULT_PROJECT_ID) || null;
+          // Clear context if current project doesn't exist - require explicit project
+          this.currentContext.currentProjectId = null;
+          this.currentContext.currentProject = null;
         }
         
         // Note: Plan context initialization should be handled separately
@@ -219,10 +155,10 @@ export class ProjectManager {
         this.currentContext.planContext = undefined;
       }
     } catch (error) {
-      // Create initial context
+      // Create initial context with no default project
       this.currentContext = {
-        currentProjectId: DEFAULT_PROJECT_ID,
-        currentProject: this.projectsCache.get(DEFAULT_PROJECT_ID) || null,
+        currentProjectId: null,
+        currentProject: null,
         availableProjects: Array.from(this.projectsCache.values()),
         isMultiProject: false,
         dataDirectory: this.getDataDir(),
@@ -370,13 +306,6 @@ export class ProjectManager {
    */
   public async deleteProject(projectId: string, confirm: boolean = false): Promise<ProjectOperationResult> {
     try {
-      // Cannot delete default project
-      if (projectId === DEFAULT_PROJECT_ID) {
-        return {
-          success: false,
-          error: "Cannot delete the default project",
-        };
-      }
 
       // Check if project exists
       const projectMetadata = await this.getProjectMetadata(projectId);
@@ -406,9 +335,11 @@ export class ProjectManager {
       const filteredProjects = projects.filter(p => p.id !== projectId);
       await this.writeProjects(filteredProjects);
 
-      // If this was the current project, switch to default
+      // If this was the current project, clear context
       if (this.currentContext?.currentProjectId === projectId) {
-        await this.setCurrentProject(DEFAULT_PROJECT_ID);
+        this.currentContext.currentProjectId = null;
+        this.currentContext.currentProject = null;
+        await this.saveContext();
       }
 
       return {
@@ -743,12 +674,6 @@ export class ProjectManager {
     }
   }
 
-  /**
-   * Get default project metadata
-   */
-  public async getDefaultProject(): Promise<ProjectMetadata | null> {
-    return await this.getProjectMetadata(DEFAULT_PROJECT_ID);
-  }
 
   /**
    * Check if system is in multi-project mode
@@ -768,22 +693,21 @@ export class ProjectManager {
 // Export singleton instance
 export const projectManager = ProjectManager.getInstance();
 
-// Export helper functions for backwards compatibility
-export async function getDefaultProject(): Promise<ProjectMetadata | null> {
-  return await projectManager.getDefaultProject();
-}
-
-export async function getCurrentProjectId(): Promise<string> {
+// Export helper functions
+export async function getCurrentProjectId(): Promise<string | null> {
   const context = await projectManager.getCurrentContext();
-  return context?.currentProjectId || DEFAULT_PROJECT_ID;
+  return context?.currentProjectId || null;
 }
 
-export async function getCurrentProjectPath(): Promise<string> {
+export async function getCurrentProjectPath(): Promise<string | null> {
   const projectId = await getCurrentProjectId();
+  if (!projectId) return null;
   return projectManager.getProjectPath(projectId);
 }
 
-export function getProjectTasksFilePath(projectId?: string): string {
-  const id = projectId || DEFAULT_PROJECT_ID;
-  return projectManager.getProjectTasksFile(id);
+export function getProjectTasksFilePath(projectId: string): string {
+  if (!projectId) {
+    throw new Error("Project ID is required");
+  }
+  return projectManager.getProjectTasksFile(projectId);
 }

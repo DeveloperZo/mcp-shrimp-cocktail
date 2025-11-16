@@ -8,6 +8,6 @@ Use this tool to:
 
 Parameters:
 - projectName (required): Project containing the plan
-- planName (optional): Name or ID of the plan (defaults to current plan if not specified)
+- planName (optional): Name or ID of the plan (uses current plan if not specified and a plan is active)
 
 Example: Get details about the current development plan including task statistics

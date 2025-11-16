@@ -3,6 +3,9 @@
 **Plan Name:** {{planName}}  
 **Plan ID:** {{planId}}  
 **Project:** {{projectName}}
+{{#if projectWasCreated}}
+{{projectWasCreated}}
+{{/if}}
 
 ## Plan Details
 

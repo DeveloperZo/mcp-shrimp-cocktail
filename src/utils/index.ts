@@ -11,5 +11,5 @@ export * from './projectResolver.js';
 export * from './taskEvents.js';
 export * from './paths.js';
 export * from './constants.js';
+export * from './rulesLoader.js';
 export * from './sse.js';
-export * from './projectResolver.js';

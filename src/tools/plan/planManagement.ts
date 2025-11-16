@@ -56,24 +56,48 @@ export async function createPlan({
       maxSuggestions: 3
     });
     
-    if (!projectResult.success) {
-      const errorMessage = loadPromptFromTemplate("planManagement/createPlan/projectNotFound.md", {
-        projectName,
-        error: projectResult.error,
-        suggestions: projectResult.suggestions,
-      });
-
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: errorMessage,
-          },
-        ],
-      };
-    }
+    let targetProject;
     
-    const targetProject = projectResult.project!;
+    if (!projectResult.success) {
+      // Project doesn't exist - create it automatically
+      await projectManager.initialize();
+      const createProjectResult = await projectManager.createProject({
+        name: projectName,
+        description: `Project created automatically for plan "${name}"`,
+      });
+      
+      if (!createProjectResult.success) {
+        const errorMessage = loadPromptFromTemplate("planManagement/createPlan/projectNotFound.md", {
+          projectName,
+          error: `Failed to create project: ${createProjectResult.error || projectResult.error}`,
+          suggestions: projectResult.suggestions,
+        });
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: errorMessage,
+            },
+          ],
+        };
+      }
+      
+      // Get the newly created project
+      targetProject = await projectManager.getProjectMetadata(createProjectResult.projectId!);
+      if (!targetProject) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Error: Project "${projectName}" was created but could not be retrieved.`,
+            },
+          ],
+        };
+      }
+    } else {
+      targetProject = projectResult.project!;
+    }
 
     // Initialize plan manager for the project
     await planManager.initialize(targetProject.id);
@@ -106,7 +130,8 @@ export async function createPlan({
       };
     }
 
-    // Success response
+    // Success response - indicate if project was auto-created
+    const projectWasCreated = !projectResult.success;
     const successMessage = loadPromptFromTemplate("planManagement/createPlan/success.md", {
       planName: name,
       planId: result.planId || "unknown",
@@ -114,6 +139,7 @@ export async function createPlan({
       description: description || "No description provided",
       tags: tags?.join(", ") || "None",
       copyFromPlan: copyFromPlan || null,
+      projectWasCreated: projectWasCreated ? `\n\nℹ️ **Note:** Project "${projectName}" was automatically created for this plan.` : "",
     });
 
     return {
@@ -225,7 +251,7 @@ export async function listPlans({
 
     // Get current plan context
     const currentContext = planManager.getCurrentContext(targetProject.id);
-    const currentPlanId = currentContext?.currentPlanId || "default";
+    const currentPlanId = currentContext?.currentPlanId || null;
 
     // Refresh stats for all plans if stats are requested
     if (includeStats) {
@@ -499,21 +525,6 @@ export async function deletePlan({
       };
     }
 
-    // Check for default plan protection
-    if (targetPlan.id === "default") {
-      const errorMessage = loadPromptFromTemplate("planManagement/deletePlan/defaultProtection.md", {
-        planName: targetPlan.name,
-      });
-
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: errorMessage,
-          },
-        ],
-      };
-    }
 
     // Require confirmation
     if (!confirm) {

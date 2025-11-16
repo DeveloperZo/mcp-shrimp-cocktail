@@ -9,7 +9,6 @@
 import { projectManager } from "../models/projectModel.js";
 import { ProjectMetadata, ProjectResolutionResult, ProjectValidationResult, ProjectResolutionOptions } from "../types/index.js";
 import { sanitizeProjectName, validateProjectName } from "./projectNaming.js";
-import { DEFAULT_PROJECT_ID } from "./constants.js";
 
 /**
  * Regular expression to detect UUID format
@@ -44,27 +43,15 @@ export async function resolveProject(
     // Initialize project manager if not already done
     await projectManager.initialize();
 
-    // Handle null/undefined/empty identifier
+    // Handle null/undefined/empty identifier - require explicit project
     if (!projectIdentifier || projectIdentifier.trim() === '') {
-      if (opts.allowDefaultFallback) {
-        const defaultProject = await projectManager.getDefaultProject();
-        if (defaultProject) {
-          return {
-            success: true,
-            project: defaultProject,
-            resolvedId: defaultProject.id,
-            matchedBy: 'default',
-          };
-        }
-      }
-      
       const availableProjects = await projectManager.listProjects();
       return {
         success: false,
         project: null,
         resolvedId: null,
         matchedBy: null,
-        error: "Project identifier is required",
+        error: "Project identifier is required. Please specify a project name or ID.",
         suggestions: opts.includeSuggestions 
           ? availableProjects.slice(0, opts.maxSuggestions).map(p => p.name)
           : undefined,

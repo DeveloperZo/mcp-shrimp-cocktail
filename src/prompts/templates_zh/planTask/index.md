@@ -19,7 +19,7 @@
 
    - 查看關鍵配置文件與結構：
      - 檢視根目錄結構和重要配置文件（package.json, tsconfig.json 等）
-     - 如果 shrimp-rules.md 存在請詳細閱讀並參考
+     - 如果存在 "AI Agent" 資料夾（位於專案根目錄、assets/doc/ai agent 或其他常見位置），請詳細閱讀並參考其中的所有 markdown 檔案
      - 分析主要的目錄組織和模組劃分
    - 辨識架構模式：
      - 識別核心設計模式和架構風格（MVC, MVVM, 微服務等）

@@ -15,8 +15,6 @@ import {
 } from "../types/index.js";
 import { sanitizeProjectName, validateProjectName, getDataDir } from "../utils/index.js";
 import { 
-  DEFAULT_PLAN_ID, 
-  DEFAULT_PLAN_NAME,
   PLANS_DIR_NAME,
   CONTEXT_FILE_NAMES,
   BACKUP_CONFIG
@@ -57,22 +55,25 @@ export class PlanManager {
   }
 
   /**
-   * Get current project ID from context or default
+   * Get current project ID from context
+   * @deprecated This method should not be used - projectId must be provided explicitly
    */
-  private async getCurrentProjectId(): Promise<string> {
-    // This is a simplified version - in a full implementation,
-    // this should read from project context file
-    return "default";
+  private async getCurrentProjectId(): Promise<string | null> {
+    // This method is deprecated - projectId should always be provided explicitly
+    // Reading from project context is not reliable without explicit project specification
+    return null;
   }
 
   /**
    * Initialize the plan management system for a project
-   * Sets up directory structure and ensures default plan exists
+   * Sets up directory structure
    */
   public async initialize(projectId?: string): Promise<void> {
     const targetProjectId = projectId || await this.getCurrentProjectId();
+    if (!targetProjectId) {
+      throw new Error("Project ID is required for plan initialization");
+    }
     await this.ensurePlanDir(targetProjectId);
-    await this.ensureDefaultPlan(targetProjectId);
     await this.loadPlansCache(targetProjectId);
     await this.initializeContext(targetProjectId);
   }
@@ -92,137 +93,6 @@ export class PlanManager {
     }
   }
 
-  /**
-   * Ensure default plan exists for backward compatibility
-   */
-  private async ensureDefaultPlan(projectId: string): Promise<void> {
-    const defaultPlanPath = this.getPlanPath(projectId, DEFAULT_PLAN_ID);
-    const projectPath = this.getProjectPath(projectId);
-    const migrationMarkerFile = path.join(projectPath, BACKUP_CONFIG.MIGRATION_MARKER);
-    
-    // Check if migration has already been completed
-    let migrationCompleted = false;
-    try {
-      await fs.access(migrationMarkerFile);
-      migrationCompleted = true;
-    } catch (error) {
-      // Migration marker doesn't exist, proceed with migration check
-    }
-    
-    // Ensure default plan directory exists
-    try {
-      await fs.access(defaultPlanPath);
-    } catch (error) {
-      // Create default plan directory
-      await fs.mkdir(defaultPlanPath, { recursive: true });
-    }
-    
-    // Perform migration if not already done
-    if (!migrationCompleted) {
-      const projectTasksFile = path.join(projectPath, "tasks.json");
-      const planTasksFile = this.getPlanTasksFilePath(projectId, DEFAULT_PLAN_ID);
-      
-      try {
-        // Check if legacy tasks.json exists in project root
-        await fs.access(projectTasksFile);
-        
-        // Create timestamp for backup
-        const timestamp = new Date().toISOString().replace(/:/g, "-").replace(/\..+/, "");
-        const backupDir = path.join(projectPath, "backups");
-        await fs.mkdir(backupDir, { recursive: true });
-        
-        // Create backup before migration
-        const backupFile = path.join(backupDir, `tasks_pre_plan_migration_${timestamp}.json`);
-        await fs.copyFile(projectTasksFile, backupFile);
-        
-        // Check if default plan already has tasks
-        let existingPlanTasks = { tasks: [] };
-        try {
-          const existingData = await fs.readFile(planTasksFile, "utf-8");
-          existingPlanTasks = JSON.parse(existingData);
-        } catch (error) {
-          // No existing plan tasks file
-        }
-        
-        // If default plan is empty, migrate the tasks
-        if (!existingPlanTasks.tasks || existingPlanTasks.tasks.length === 0) {
-          await fs.copyFile(projectTasksFile, planTasksFile);
-          
-          // Remove original after successful migration
-          await fs.unlink(projectTasksFile);
-          
-          // Create migration summary file
-          const migrationSummary = {
-            migrationDate: new Date().toISOString(),
-            projectId,
-            backupLocation: backupFile,
-            tasksFile: projectTasksFile,
-            targetPlan: DEFAULT_PLAN_ID,
-            success: true
-          };
-          
-          const summaryFile = path.join(backupDir, `migration_summary_${timestamp}.json`);
-          await fs.writeFile(summaryFile, JSON.stringify(migrationSummary, null, 2));
-        }
-        
-        // Create migration marker
-        await fs.writeFile(migrationMarkerFile, JSON.stringify({
-          migrationCompleted: true,
-          timestamp: new Date().toISOString(),
-          projectId
-        }, null, 2));
-        
-      } catch (migrationError) {
-        // No existing tasks.json to migrate or migration failed
-        // Ensure default plan has tasks.json
-        try {
-          await fs.access(planTasksFile);
-        } catch (error) {
-          // Create empty tasks file if it doesn't exist
-          await fs.writeFile(planTasksFile, JSON.stringify({ tasks: [] }, null, 2));
-        }
-        
-        // Still create migration marker to prevent repeated attempts
-        await fs.writeFile(migrationMarkerFile, JSON.stringify({
-          migrationCompleted: true,
-          timestamp: new Date().toISOString(),
-          projectId,
-          noMigrationNeeded: true
-        }, null, 2));
-      }
-    }
-
-    // Ensure default plan metadata exists
-    const plans = await this.readPlans(projectId);
-    let defaultPlan = plans.find(p => p.id === DEFAULT_PLAN_ID);
-    
-    if (!defaultPlan) {
-      // Calculate initial stats from migrated tasks
-      const stats = await this.calculatePlanStats(projectId, DEFAULT_PLAN_ID);
-      
-      const defaultPlanMetadata: PlanMetadata = {
-        id: DEFAULT_PLAN_ID,
-        name: DEFAULT_PLAN_NAME,
-        sanitizedName: DEFAULT_PLAN_ID,
-        description: "Default plan for backward compatibility",
-        status: PlanStatus.ACTIVE,
-        projectId,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        tags: [],
-        stats,
-      };
-      
-      plans.push(defaultPlanMetadata);
-      await this.writePlans(projectId, plans);
-    } else if (!migrationCompleted) {
-      // Update stats after migration
-      const stats = await this.calculatePlanStats(projectId, DEFAULT_PLAN_ID);
-      defaultPlan.stats = stats;
-      defaultPlan.updatedAt = new Date();
-      await this.writePlans(projectId, plans);
-    }
-  }
 
   /**
    * Calculate statistics for a plan based on its tasks
@@ -324,24 +194,22 @@ export class PlanManager {
       if (context && context.currentPlanId) {
         const planExists = await this.planExists(projectId, context.currentPlanId);
         if (!planExists) {
-          // Reset to default plan if current plan doesn't exist
-          context.currentPlanId = DEFAULT_PLAN_ID;
-          const projectPlansCache = this.plansCache.get(projectId);
-          context.currentPlan = projectPlansCache?.get(DEFAULT_PLAN_ID) || await this.getPlanMetadata(projectId, DEFAULT_PLAN_ID) || {} as PlanMetadata;
+          // Clear context if current plan doesn't exist - require explicit plan
+          context.currentPlanId = null;
+          context.currentPlan = null;
         }
       }
       
       this.currentPlanContext.set(projectId, context);
     } catch (error) {
-      // Create initial context
+      // Create initial context with no default plan
       const projectPlansCache = this.plansCache.get(projectId) || new Map();
-      const defaultPlan = projectPlansCache.get(DEFAULT_PLAN_ID) || await this.getPlanMetadata(projectId, DEFAULT_PLAN_ID);
       
       const context: PlanContext = {
-        currentPlanId: DEFAULT_PLAN_ID,
-        currentPlan: defaultPlan || {} as PlanMetadata,
+        currentPlanId: null,
+        currentPlan: null,
         availablePlans: Array.from(projectPlansCache.values()),
-        planDirectory: this.getPlanPath(projectId, DEFAULT_PLAN_ID),
+        planDirectory: null,
       };
       
       this.currentPlanContext.set(projectId, context);
@@ -417,7 +285,7 @@ export class PlanManager {
    */
   public getPlanPath(projectId: string, planId: string): string {
     const projectPath = this.getProjectPath(projectId);
-    const sanitizedPlanName = planId === DEFAULT_PLAN_ID ? "default" : planId;
+    const sanitizedPlanName = planId;
     return path.join(projectPath, PLANS_DIR_NAME, sanitizedPlanName);
   }
 
@@ -464,15 +332,11 @@ export class PlanManager {
    * Get current plan context for a project
    */
   public getCurrentContext(projectId?: string): PlanContext | null {
-    const targetProjectId = projectId || DEFAULT_PLAN_ID;
+    if (!projectId) {
+      throw new Error("Project ID is required");
+    }
+    const targetProjectId = projectId;
     return this.currentPlanContext.get(targetProjectId) || null;
-  }
-
-  /**
-   * Get default plan metadata for a project
-   */
-  public async getDefaultPlan(projectId: string): Promise<PlanMetadata | null> {
-    return await this.getPlanMetadata(projectId, DEFAULT_PLAN_ID);
   }
 
   /**
@@ -480,10 +344,7 @@ export class PlanManager {
    */
   public async getCurrentPlan(projectId: string): Promise<PlanMetadata | null> {
     const context = this.getCurrentContext(projectId);
-    if (!context) {
-      return await this.getDefaultPlan(projectId);
-    }
-    return context.currentPlan;
+    return context?.currentPlan || null;
   }
 
   /**
@@ -554,8 +415,8 @@ export class PlanManager {
       existingPlans.push(planMetadata);
       await this.writePlans(projectId, existingPlans);
 
-      // Update context if this is the first non-default plan
-      if (existingPlans.length === 2) { // Default + this new plan
+      // Update context after creating new plan
+      if (existingPlans.length === 1) { // This is the first plan
         const context = this.currentPlanContext.get(projectId);
         if (context) {
           context.availablePlans = existingPlans;
@@ -707,14 +568,6 @@ export class PlanManager {
    */
   public async deletePlan(projectId: string, planId: string, confirm: boolean = false): Promise<PlanOperationResult> {
     try {
-      // Cannot delete default plan
-      if (planId === DEFAULT_PLAN_ID) {
-        return {
-          success: false,
-          error: "Cannot delete the default plan",
-        };
-      }
-
       // Check if plan exists
       const planMetadata = await this.getPlanMetadata(projectId, planId);
       if (!planMetadata) {
@@ -724,12 +577,12 @@ export class PlanManager {
         };
       }
 
-      // Check if this is the only plan (besides default)
+      // Check if this is the only plan
       const plans = await this.readPlans(projectId);
-      if (plans.length <= 2) { // Default + one other
+      if (plans.length <= 1) {
         return {
           success: false,
-          error: "Cannot delete the only plan in the project (besides default)",
+          error: "Cannot delete the only plan in the project",
         };
       }
 
@@ -751,10 +604,12 @@ export class PlanManager {
       const filteredPlans = plans.filter(p => p.id !== planId);
       await this.writePlans(projectId, filteredPlans);
 
-      // If this was the current plan, switch to default
+      // If this was the current plan, clear context
       const context = this.currentPlanContext.get(projectId);
       if (context?.currentPlanId === planId) {
-        await this.setCurrentPlan(projectId, DEFAULT_PLAN_ID);
+        context.currentPlanId = null;
+        context.currentPlan = null;
+        await this.saveContext(projectId);
       } else if (context) {
         // Update available plans in context
         context.availablePlans = filteredPlans;
@@ -966,19 +821,26 @@ export class PlanManager {
 export const planManager = PlanManager.getInstance();
 
 // Export helper functions for convenience
-export async function getCurrentPlanId(projectId?: string): Promise<string> {
-  const targetProjectId = projectId || "default"; // Use default instead of importing getCurrentProjectId
-  const context = planManager.getCurrentContext(targetProjectId);
-  return context?.currentPlanId || DEFAULT_PLAN_ID;
+export async function getCurrentPlanId(projectId: string): Promise<string | null> {
+  if (!projectId) {
+    throw new Error("Project ID is required");
+  }
+  const context = planManager.getCurrentContext(projectId);
+  return context?.currentPlanId || null;
 }
 
-export async function getCurrentPlanPath(projectId?: string): Promise<string> {
-  const targetProjectId = projectId || "default"; // Use default instead of importing getCurrentProjectId
-  const planId = await getCurrentPlanId(targetProjectId);
-  return planManager.getPlanPath(targetProjectId, planId);
+export async function getCurrentPlanPath(projectId: string): Promise<string | null> {
+  if (!projectId) {
+    throw new Error("Project ID is required");
+  }
+  const planId = await getCurrentPlanId(projectId);
+  if (!planId) return null;
+  return planManager.getPlanPath(projectId, planId);
 }
 
-export function getPlanTasksFilePath(projectId: string, planId?: string): string {
-  const targetPlanId = planId || DEFAULT_PLAN_ID;
-  return planManager.getPlanTasksFilePath(projectId, targetPlanId);
+export function getPlanTasksFilePath(projectId: string, planId: string): string {
+  if (!projectId || !planId) {
+    throw new Error("Project ID and Plan ID are required");
+  }
+  return planManager.getPlanTasksFilePath(projectId, planId);
 }

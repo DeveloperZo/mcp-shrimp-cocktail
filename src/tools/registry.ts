@@ -11,7 +11,7 @@ import type { z } from "zod";
  */
 export interface ToolDefinition {
   schema: z.ZodSchema;
-  handler: (args: any) => Promise<CallToolResult>;
+  handler: (args: any) => Promise<CallToolResult | { content: Array<{ type: string; text: string }> }>;
   description?: string;
 }
 

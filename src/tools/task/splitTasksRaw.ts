@@ -12,7 +12,7 @@ import { resolveProject } from "../../utils/projectResolver.js";
 export const splitTasksRawSchema = z.object({
   projectName: z
     .string()
-    .describe("Project name or ID where tasks should be created. Use 'default' for the default project."),
+    .describe("Project name or ID where tasks should be created. Must specify a valid project name or ID."),
   updateMode: z
     .enum(["append", "overwrite", "selective", "clearAllTasks"])
     .describe(

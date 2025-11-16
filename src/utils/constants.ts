@@ -2,14 +2,6 @@
 // No dependencies on other utils - only types if needed
 
 /**
- * Default project and plan identifiers
- */
-export const DEFAULT_PROJECT_ID = "default";
-export const DEFAULT_PROJECT_NAME = "Default Project";
-export const DEFAULT_PLAN_ID = "default";
-export const DEFAULT_PLAN_NAME = "Default Plan";
-
-/**
  * Data file names
  */
 export const TASKS_FILE_NAME = "tasks.json";
@@ -45,6 +37,7 @@ export const ENV_KEYS = {
  */
 export const GUI_CONFIG = {
   DEFAULT_LANGUAGE: "en",
+  DEFAULT_PORT: 3000,
   LANGUAGE_MAPPING: {
     zh: "zh-TW",
     en: "en"

@@ -23,11 +23,6 @@ export const createProjectSchema = z.object({
     .string()
     .optional()
     .describe("Optional description of the project"),
-  setAsDefault: z
-    .boolean()
-    .optional()
-    .default(false)
-    .describe("@deprecated This parameter is ignored. There is no longer a concept of 'current project'. Specify projectName in each command instead."),
   copyFromProject: z
     .string()
     .optional()
@@ -41,7 +36,6 @@ export const createProjectSchema = z.object({
 export async function createProject({
   name,
   description,
-  setAsDefault = false,
   copyFromProject,
   tags,
 }: z.infer<typeof createProjectSchema>) {
@@ -76,7 +70,6 @@ export async function createProject({
       };
     }
 
-    // Note: setAsDefault parameter is deprecated and ignored
 
     // Success response
     const successMessage = loadPromptFromTemplate("projectManagement/createProject/success.md", {
@@ -227,16 +220,10 @@ export const switchProjectSchema = z.object({
     .string()
     .min(1, "Project name cannot be empty")
     .describe("Name or ID of the project to switch to"),
-  setAsDefault: z
-    .boolean()
-    .optional()
-    .default(true)
-    .describe("Whether to set this as the default current project"),
 });
 
 export async function switchProject({
   projectName,
-  setAsDefault = true,
 }: z.infer<typeof switchProjectSchema>) {
   // Return deprecation notice
   return {
@@ -294,21 +281,7 @@ export async function deleteProject({
     
     const targetProject = projectResult.project!;
 
-    // Check for default project protection
-    if (targetProject.id === "default") {
-      const errorMessage = loadPromptFromTemplate("projectManagement/deleteProject/defaultProtection.md", {
-        projectName: targetProject.name,
-      });
-
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: errorMessage,
-          },
-        ],
-      };
-    }
+    // No special protection needed - all projects can be deleted
 
     // Require confirmation
     if (!confirm) {

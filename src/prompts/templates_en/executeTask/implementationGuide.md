@@ -4,4 +4,4 @@
 
 Ensure no new markdown files were created without user permission
 
-Ensure shrimp-rules are being followed
+Ensure AI Agent rules (from "AI Agent" folder) are being followed

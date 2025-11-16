@@ -1,5 +1,4 @@
 import express, { Request, Response, NextFunction, RequestHandler } from "express";
-import getPort from "get-port";
 import path from "path";
 import fs from "fs";
 import fsPromises from "fs/promises";
@@ -398,26 +397,8 @@ export function createExpressApp(): express.Application {
           res.status(500).json({ error: "Failed to load project tasks" });
         }
       } else {
-        // Backwards compatibility: use default project or legacy tasks.json
-        try {
-          // Try to load from default project first
-          await projectManager.initialize();
-          const tasks = await loadProjectTasks('default', planParam || 'default');
-          res.json({ tasks });
-        } catch (defaultProjectError) {
-          // Fall back to legacy tasks.json for backwards compatibility
-          try {
-            const tasksData = await fsPromises.readFile(TASKS_FILE_PATH, "utf-8");
-            res.json(JSON.parse(tasksData));
-          } catch (legacyError) {
-            // Ensure file doesn't exist returns empty task list
-            if ((legacyError as NodeJS.ErrnoException).code === "ENOENT") {
-              res.json({ tasks: [] });
-            } else {
-              res.status(500).json({ error: "Failed to read tasks data" });
-            }
-          }
-        }
+        // Project parameter is required
+        res.status(400).json({ error: "Project parameter is required" });
       }
     } catch (error) {
       console.error("Error retrieving tasks:", error);
@@ -470,8 +451,11 @@ export function createExpressApp(): express.Application {
  * Start the Express server on specified port
  */
 export async function startExpressServer(app: express.Application): Promise<{ httpServer: any, port: string | number }> {
-  // Get available port
-  const port = process.env[ENV_KEYS.WEB_PORT] || (await getPort());
+  // Use static default port, allow override via environment variable
+  const portEnv = process.env[ENV_KEYS.WEB_PORT];
+  const port = portEnv 
+    ? parseInt(portEnv, 10) 
+    : GUI_CONFIG.DEFAULT_PORT;
 
   // Start HTTP server
   const httpServer = app.listen(port, () => {

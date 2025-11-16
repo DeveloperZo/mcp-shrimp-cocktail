@@ -614,13 +614,16 @@ export function createMcpServer(): Server {
       }
       
       if (projectId && !planId) {
-        // Project tasks (default plan)
-        const tasks = await loadProjectTasks(projectId, "default");
+        // Plan is required when accessing project tasks
         return {
           contents: [{
             uri,
-            mimeType: "application/json",
-            text: JSON.stringify(tasks, null, 2)
+            mimeType: "text/plain",
+            text: createErrorResponse({
+              code: McpErrorCode.RESOURCE_NOT_FOUND,
+              message: `Plan ID is required for project tasks. Use format: shrimp://projects/${projectId}/plans/{planId}/tasks`,
+              resourceUri: uri,
+            }).content[0].text
           }]
         };
       }

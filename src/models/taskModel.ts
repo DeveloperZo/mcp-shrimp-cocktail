@@ -10,8 +10,6 @@ import {
 } from "../types/index.js";
 import { getDataDir } from "../utils/index.js";
 import {
-  DEFAULT_PROJECT_ID,
-  DEFAULT_PLAN_ID,
   TASKS_FILE_NAME
 } from "../utils/constants.js";
 import fs from "fs/promises";
@@ -55,24 +53,27 @@ async function resolveProjectId(projectNameOrId: string): Promise<string> {
       p.name === projectNameOrId || p.sanitizedName === projectNameOrId
     );
     
-    return project ? project.id : DEFAULT_PROJECT_ID;
+    if (!project) {
+      throw new Error(`Project "${projectNameOrId}" not found`);
+    }
+    return project.id;
   } catch (error) {
-    return DEFAULT_PROJECT_ID;
+    throw new Error(`Failed to resolve project "${projectNameOrId}": ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
 /**
  * Get current plan ID for a project by reading plan-context.json
  */
-async function getCurrentPlanForProject(projectId: string): Promise<string> {
+async function getCurrentPlanForProject(projectId: string): Promise<string | null> {
   try {
     const planContextFile = path.join(getDataDir(), "projects", projectId, "plan-context.json");
     const data = await fs.readFile(planContextFile, "utf-8");
     const contextData = JSON.parse(data);
     
-    return contextData.currentPlanId || DEFAULT_PLAN_ID;
+    return contextData.currentPlanId || null;
   } catch (error) {
-    return DEFAULT_PLAN_ID;
+    return null;
   }
 }
 function getProjectPath(projectId: string): string {
@@ -777,21 +778,17 @@ export async function clearAllTasks(projectId?: string | null, planId?: string |
   backupFile?: string;
 }> {
   try {
-    // Resolve project name to actual project ID
-    let actualProjectId: string;
-    if (projectId) {
-      actualProjectId = await resolveProjectId(projectId);
-    } else {
-      actualProjectId = DEFAULT_PROJECT_ID;
+    // Resolve project name to actual project ID - project is required
+    if (!projectId) {
+      throw new Error("Project ID is required");
     }
+    const actualProjectId = await resolveProjectId(projectId);
     
-    // Get current plan ID for the project (if not specified)
-    let actualPlanId: string;
-    if (planId) {
-      actualPlanId = planId;
-    } else {
-      actualPlanId = await getCurrentPlanForProject(actualProjectId);
+    // Get plan ID - plan is required
+    if (!planId) {
+      throw new Error("Plan ID is required");
     }
+    const actualPlanId = planId;
     
     // 讀取現有任務
     const allTasks = await readTasks(actualProjectId, actualPlanId);
@@ -856,21 +853,17 @@ export async function clearAllTasks(projectId?: string | null, planId?: string |
  */
 export async function loadProjectTasks(projectId?: string | null, planId?: string | null): Promise<Task[]> {
   try {
-    // Step 1: Resolve project name to actual project ID
-    let actualProjectId: string;
-    if (projectId) {
-      actualProjectId = await resolveProjectId(projectId);
-    } else {
-      actualProjectId = DEFAULT_PROJECT_ID;
+    // Step 1: Resolve project name to actual project ID - project is required
+    if (!projectId) {
+      throw new Error("Project ID is required");
     }
+    const actualProjectId = await resolveProjectId(projectId);
     
-    // Step 2: Get current plan ID for the project (if not specified)
-    let actualPlanId: string;
-    if (planId) {
-      actualPlanId = planId;
-    } else {
-      actualPlanId = await getCurrentPlanForProject(actualProjectId);
+    // Step 2: Get plan ID - plan is required
+    if (!planId) {
+      throw new Error("Plan ID is required");
     }
+    const actualPlanId = planId;
     
     // Step 3: Get plan-aware tasks file path
     const tasksFile = getPlanTasksFilePath(actualProjectId, actualPlanId);
@@ -908,21 +901,17 @@ export async function loadProjectTasks(projectId?: string | null, planId?: strin
  */
 export async function saveProjectTasks(tasks: Task[], projectId?: string | null, planId?: string | null): Promise<void> {
   try {
-    // Step 1: Resolve project name to actual project ID
-    let actualProjectId: string;
-    if (projectId) {
-      actualProjectId = await resolveProjectId(projectId);
-    } else {
-      actualProjectId = DEFAULT_PROJECT_ID;
+    // Step 1: Resolve project name to actual project ID - project is required
+    if (!projectId) {
+      throw new Error("Project ID is required");
     }
+    const actualProjectId = await resolveProjectId(projectId);
     
-    // Step 2: Get current plan ID for the project (if not specified)
-    let actualPlanId: string;
-    if (planId) {
-      actualPlanId = planId;
-    } else {
-      actualPlanId = await getCurrentPlanForProject(actualProjectId);
+    // Step 2: Get plan ID - plan is required
+    if (!planId) {
+      throw new Error("Plan ID is required");
     }
+    const actualPlanId = planId;
     
     // Step 3: Get plan-aware tasks file path
     const tasksFile = getPlanTasksFilePath(actualProjectId, actualPlanId);
@@ -977,21 +966,17 @@ export async function createProjectTask(
   projectId?: string | null,
   planId?: string | null
 ): Promise<Task> {
-  // Resolve project name to actual project ID
-  let actualProjectId: string;
-  if (projectId) {
-    actualProjectId = await resolveProjectId(projectId);
-  } else {
-    actualProjectId = DEFAULT_PROJECT_ID;
+  // Resolve project name to actual project ID - project is required
+  if (!projectId) {
+    throw new Error("Project ID is required");
   }
+  const actualProjectId = await resolveProjectId(projectId);
   
-  // Get current plan ID for the project (if not specified)
-  let actualPlanId: string;
-  if (planId) {
-    actualPlanId = planId;
-  } else {
-    actualPlanId = await getCurrentPlanForProject(actualProjectId);
+  // Get plan ID - plan is required
+  if (!planId) {
+    throw new Error("Plan ID is required");
   }
+  const actualPlanId = planId;
   
   const tasks = await loadProjectTasks(actualProjectId, actualPlanId);
   
@@ -1028,13 +1013,11 @@ export async function updateProjectTask(
   updates: Partial<Task>,
   projectId?: string | null
 ): Promise<Task | null> {
-  // Resolve project name to actual project ID
-  let actualProjectId: string;
-  if (projectId) {
-    actualProjectId = await resolveProjectId(projectId);
-  } else {
-    actualProjectId = DEFAULT_PROJECT_ID;
+  // Resolve project name to actual project ID - project is required
+  if (!projectId) {
+    throw new Error("Project ID is required");
   }
+  const actualProjectId = await resolveProjectId(projectId);
   
   const tasks = await loadProjectTasks(actualProjectId);
   const taskIndex = tasks.findIndex(task => task.id === taskId);
@@ -1074,13 +1057,11 @@ export async function deleteProjectTask(
   taskId: string,
   projectId?: string | null
 ): Promise<{ success: boolean; message: string }> {
-  // Resolve project name to actual project ID
-  let actualProjectId: string;
-  if (projectId) {
-    actualProjectId = await resolveProjectId(projectId);
-  } else {
-    actualProjectId = DEFAULT_PROJECT_ID;
+  // Resolve project name to actual project ID - project is required
+  if (!projectId) {
+    throw new Error("Project ID is required");
   }
+  const actualProjectId = await resolveProjectId(projectId);
   
   const tasks = await loadProjectTasks(actualProjectId);
   const taskIndex = tasks.findIndex(task => task.id === taskId);

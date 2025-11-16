@@ -363,13 +363,13 @@ export interface PlanMetadata {
  */
 export interface PlanContext {
   /** 當前活躍的計劃ID */
-  currentPlanId: string;
+  currentPlanId: string | null;
   /** 當前計劃的元數據 */
-  currentPlan: PlanMetadata;
+  currentPlan: PlanMetadata | null;
   /** 當前項目下所有可用計劃的列表 */
   availablePlans: PlanMetadata[];
   /** 計劃數據目錄路徑 */
-  planDirectory: string;
+  planDirectory: string | null;
 }
 
 /**
@@ -447,7 +447,7 @@ export interface ProjectValidationResult {
  * Options for project resolution behavior
  */
 export interface ProjectResolutionOptions {
-  /** Whether to fall back to default project if resolution fails */
+  /** @deprecated No longer supported - project is always required */
   allowDefaultFallback?: boolean;
   /** Whether to include case-insensitive matching */
   caseInsensitive?: boolean;

@@ -67,7 +67,6 @@
   "plan_selector_label": "Plan",
   "plan_selector_placeholder": "Select a plan...",
   "plan_loading": "Loading plans...",
-  "plan_default": "Default Plan",
   "plan_no_plans": "No plans available",
   "plan_error": "Error loading plans",
   "error_loading_plans": "Failed to load plans: {message}",
